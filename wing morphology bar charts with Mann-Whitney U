@@ -1,0 +1,177 @@
+import matplotlib.pyplot as plt
+import matplotlib as mpl
+import numpy as np
+import os
+
+# =========================================================
+# 🎨 GLOBAL STYLE SETTINGS (Publication-ready)
+# Ensures consistent export (Illustrator-friendly fonts)
+# =========================================================
+mpl.rcParams.update({
+    "font.family": "Times New Roman",
+    "axes.unicode_minus": False,
+    "figure.facecolor": "white",
+    "axes.facecolor": "white",
+    "savefig.facecolor": "white",
+    "pdf.fonttype": 42,   # Keep text editable in vector formats
+    "ps.fonttype": 42
+})
+
+# Ensure reproducible jitter in scatter plots
+np.random.seed(42)
+
+# =========================================================
+# 📊 DATA STRUCTURE
+# Each genotype → list of 6 parameters (order must match 'params')
+# Replace empty lists with actual measurements
+# =========================================================
+data = {
+    "WT":              [[], [], [], [], [], []],
+    "DAAM RNAi":       [[], [], [], [], [], []],
+    "Rac1 RNAi":       [[], [], [], [], [], []],
+    "Rho1GAP19D RNAi": [[], [], [], [], [], []],
+    "Rok RNAi":        [[], [], [], [], [], []]
+}
+
+# Parameter labels (used for subplot titles)
+params = [
+    "Total wing area (mm²)",
+    "Perimeter (mm)",
+    "Perimeter/Area",
+    "Aspect Ratio",
+    "Circularity",
+    "Roundness"
+]
+
+groups = list(data.keys())
+
+# =========================================================
+# 📈 PRE-COMPUTED MANN–WHITNEY P-VALUES
+# Structure: {parameter: {genotype vs WT: p-value}}
+# =========================================================
+mw_pvals = {
+    param: {
+        "DAAM RNAi": None,
+        "Rac1 RNAi": None,
+        "Rho1GAP19D RNAi": None,
+        "Rok RNAi": None
+    }
+    for param in params
+}
+
+# =========================================================
+# ⭐ SIGNIFICANCE STAR MAPPING
+# Converts p-values into standard annotation symbols
+# =========================================================
+def stars(p):
+    if p is None:
+        return ""
+    if p < 0.001:
+        return "***"
+    elif p < 0.01:
+        return "**"
+    elif p < 0.05:
+        return "*"
+    return "ns"
+
+# =========================================================
+# 📉 PLOTTING SETUP
+# 2 × 3 grid → one subplot per parameter
+# =========================================================
+fig, axes = plt.subplots(2, 3, figsize=(13, 9))
+axes = axes.flatten()
+
+for i, param in enumerate(params):
+    ax = axes[i]
+
+    # -----------------------------------------------------
+    # Extract data for this parameter across all groups
+    # -----------------------------------------------------
+    plot_data = [data[group][i] for group in groups]
+
+    # -----------------------------------------------------
+    # 📦 Boxplot (no outliers shown)
+    # -----------------------------------------------------
+    bp = ax.boxplot(plot_data, showfliers=False)
+
+    # Uniform styling for all boxplot elements
+    for element in bp:
+        plt.setp(bp[element], color="black", linewidth=1.2)
+
+    # -----------------------------------------------------
+    # ⚫ Overlay individual data points (jittered)
+    # Helps visualise distribution density
+    # -----------------------------------------------------
+    for j, values in enumerate(plot_data):
+        x = np.random.normal(j + 1, 0.06, len(values))
+        ax.scatter(x, values, s=15, color="black", alpha=0.7)
+
+    # -----------------------------------------------------
+    # 🏷️ Axis labels and subplot title
+    # -----------------------------------------------------
+    xticklabels = [g.replace(" RNAi", "\nRNAi") for g in groups]
+    ax.set_xticklabels(xticklabels)
+    ax.set_title(param)
+
+    # -----------------------------------------------------
+    # 📏 Dynamic Y-axis scaling
+    # Prevents overlap with significance bars
+    # -----------------------------------------------------
+    if any(len(v) > 0 for v in plot_data):
+        all_vals = np.concatenate(plot_data)
+    else:
+        all_vals = np.array([0])  # fallback to avoid crash
+
+    ymin, ymax = np.min(all_vals), np.max(all_vals)
+    rng = ymax - ymin if ymax > ymin else 1  # avoid zero range
+
+    ax.set_ylim(ymin - 0.35 * rng, ymax + 0.6 * rng)
+
+    # -----------------------------------------------------
+    # 📊 Significance annotations (vs WT only)
+    # -----------------------------------------------------
+    height = ymax + 0.05 * rng
+    step = 0.12 * rng
+
+    for j, group in enumerate(groups):
+        if group == "WT":
+            continue
+
+        pval = mw_pvals[param][group]
+        if pval is None:
+            continue
+
+        label = stars(pval)
+
+        # Draw comparison bracket (WT vs group)
+        ax.plot(
+            [1, 1, j + 1, j + 1],
+            [height, height + 0.02 * rng, height + 0.02 * rng, height],
+            color="black"
+        )
+
+        # Add significance label
+        ax.text(
+            (1 + j + 1) / 2,
+            height + 0.03 * rng,
+            label,
+            ha="center"
+        )
+
+        height += step  # stack next annotation higher
+
+# =========================================================
+# 🧩 FINAL LAYOUT + EXPORT
+# =========================================================
+plt.tight_layout()
+
+output_path = os.path.join(
+    os.path.expanduser("~"),
+    "Desktop",
+    "BOXPLOT_FINAL_MW_FIXED.png"
+)
+
+plt.savefig(output_path, dpi=600, bbox_inches="tight")
+plt.show()
+
+print("Saved:", output_path)
