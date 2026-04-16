@@ -6,33 +6,44 @@ import os
 import matplotlib as mpl
 
 # =========================================================
-# FONT SETTINGS 
+# 🎨 GLOBAL STYLE SETTINGS
+# =========================================================
+mpl.rcParams.update({
+    "font.family": "Times New Roman",   # Change here if needed
+    "axes.unicode_minus": False
+})
+
+np.random.seed(42)
+
+# =========================================================
+# 1. USER CONFIGURATION
 # =========================================================
 
-mpl.rcParams.update({
-    "font.family": "Times New Roman",   # CHANGE FONT AS NEEDED HERE, THIS FORCES PYTHON TO USE THIS FONT THROUGHOUT
-    "axes.unicode_minus": False})       # I don't like Times New Roman
+DB_PATH = r"C:\Users\daryl\Desktop\raw data\RhoGAP7Proj-1\TA.db"
 
-# =========================
-# 🔧 SET PATH
-# =========================
-db_path = r"C:\Users\daryl\Desktop\raw data\RhoGAP7Proj-1\TA.db"  # CHANGE FILE DIRECTORY HERE (FILE FORMAT MUST BE IN .pd!!!!!)
+OUTPUT_DIR = os.path.join(os.path.dirname(DB_PATH), "analysis_output")
+os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-output_dir = os.path.join(os.path.dirname(db_path), "analysis_output")
-os.makedirs(output_dir, exist_ok=True)
+# =========================================================
+# 2. LOAD DATA
+# =========================================================
 
-# =========================
-# 📥 LOAD DATA
-# =========================
-conn = sqlite3.connect(db_path)   # THIS READS THE .db FILE!!! WHICH IS WHY YOU NEED TO USE .db!!!!!!
-cells = pd.read_sql("SELECT * FROM cells", conn)
-conn.close()
+def load_cells(db_path):
+    """Load cell table from SQLite database."""
+    conn = sqlite3.connect(db_path)
+    df = pd.read_sql("SELECT * FROM cells", conn)
+    conn.close()
+    return df
 
-# =========================
-# 🧹 CLEAN DATA
-# =========================
+cells = load_cells(DB_PATH)
+
+# =========================================================
+# 3. CLEAN DATA
+# =========================================================
+
+# Remove invalid coordinates and neighbour values
 cells_clean = cells[
-    (cells["center_x_cells"] > 0) &   # IF THERE IS NaN PYTHON WILL COMPLAIN 
+    (cells["center_x_cells"] > 0) &
     (cells["center_y_cells"] > 0)
 ].copy()
 
@@ -40,80 +51,96 @@ cells_clean = cells_clean[cells_clean["nb_of_vertices_no_cut_off"] > 0]
 
 print("Number of valid cells:", len(cells_clean))
 
-# =========================
-# 📍 CELL POSITION
-# =========================
-plt.figure(figsize=(6,6))
-plt.scatter(
-    cells_clean["center_x_cells"],
-    cells_clean["center_y_cells"],
-    s=5,
-    color='blue'
-)
-plt.gca().invert_yaxis()
-plt.title("Cell positions in tissue")
-plt.xlabel("X position")
-plt.ylabel("Y position")
-plt.axis('equal')
+# =========================================================
+# 4. CELL POSITION PLOT
+# =========================================================
 
-plt.savefig(os.path.join(output_dir, "cell_positions.png"), dpi=600)
-plt.show()
+def plot_cell_positions(df):
+    plt.figure(figsize=(6, 6))
 
-# =========================
-# 🔢 NEIGHBOUR ANALYSIS
-# =========================
-plt.figure(figsize=(6,4))
+    plt.scatter(
+        df["center_x_cells"],
+        df["center_y_cells"],
+        s=5,
+        color="blue"
+    )
 
-cells_clean["nb_of_vertices_no_cut_off"].hist(
-    bins=range(1, 11),
-    rwidth=0.8,
-    color='skyblue'
-)
+    plt.gca().invert_yaxis()
+    plt.axis("equal")
 
-plt.title("Wing Disc Pouch: Cell Neighbour Distribution")
-plt.xlabel("Number of neighbours")
-plt.ylabel("Frequency")
-plt.xticks(range(1, 11))
+    plt.title("Cell Positions in Tissue")
+    plt.xlabel("X position")
+    plt.ylabel("Y position")
 
-plt.savefig(os.path.join(output_dir, "neighbour_histogram.png"), dpi=600)
-plt.show()
+    plt.savefig(os.path.join(OUTPUT_DIR, "cell_positions.png"), dpi=600)
+    plt.close()
 
-neighbor_counts = cells_clean["nb_of_vertices_no_cut_off"].value_counts().sort_index()
-neighbor_percent = 100 * neighbor_counts / neighbor_counts.sum()
+plot_cell_positions(cells_clean)
 
-neighbor_table = pd.DataFrame({
-    "Number of Neighbours": neighbor_counts.index,
-    "Cell Count": neighbor_counts.values,
-    "Percentage (%)": neighbor_percent.values.round(2)
-})
+# =========================================================
+# 5. NEIGHBOUR ANALYSIS
+# =========================================================
 
-neighbor_table.to_csv(os.path.join(output_dir, "neighbour_table.csv"), index=False)
+def neighbour_analysis(df):
+    # Histogram
+    plt.figure(figsize=(6, 4))
 
-print("\nNEIGHBOUR TABLE")
-print(neighbor_table)
+    df["nb_of_vertices_no_cut_off"].hist(
+        bins=range(1, 11),
+        rwidth=0.8,
+        color="skyblue"
+    )
 
-# Spatial neighbour plot
-plt.figure(figsize=(6,6))
-plt.scatter(
-    cells_clean["center_x_cells"],
-    cells_clean["center_y_cells"],
-    c=cells_clean["nb_of_vertices_no_cut_off"],
-    cmap='viridis',
-    s=20
-)
+    plt.title("Cell Neighbour Distribution")
+    plt.xlabel("Number of neighbours")
+    plt.ylabel("Frequency")
+    plt.xticks(range(1, 11))
 
-plt.gca().invert_yaxis()
-plt.colorbar(label="Number of neighbours")
-plt.axis('equal')
-plt.title("Cells Colored by Neighbour Number")
+    plt.savefig(os.path.join(OUTPUT_DIR, "neighbour_histogram.png"), dpi=600)
+    plt.close()
 
-plt.savefig(os.path.join(output_dir, "neighbour_spatial.png"), dpi=600)
-plt.show()
+    # Table
+    counts = df["nb_of_vertices_no_cut_off"].value_counts().sort_index()
+    percents = 100 * counts / counts.sum()
 
-# =========================
-# 📊 METRICS ANALYSIS
-# =========================
-hist_info = {
+    table = pd.DataFrame({
+        "Number of Neighbours": counts.index,
+        "Cell Count": counts.values,
+        "Percentage (%)": percents.round(2)
+    })
+
+    table.to_csv(os.path.join(OUTPUT_DIR, "neighbour_table.csv"), index=False)
+
+    print("\nNEIGHBOUR TABLE")
+    print(table)
+
+    # Spatial plot
+    plt.figure(figsize=(6, 6))
+
+    sc = plt.scatter(
+        df["center_x_cells"],
+        df["center_y_cells"],
+        c=df["nb_of_vertices_no_cut_off"],
+        cmap="viridis",
+        s=20
+    )
+
+    plt.gca().invert_yaxis()
+    plt.axis("equal")
+
+    plt.colorbar(sc, label="Number of neighbours")
+    plt.title("Cells Colored by Neighbour Number")
+
+    plt.savefig(os.path.join(OUTPUT_DIR, "neighbour_spatial.png"), dpi=600)
+    plt.close()
+
+neighbour_analysis(cells_clean)
+
+# =========================================================
+# 6. METRIC ANALYSIS
+# =========================================================
+
+METRICS = {
     "area": ("area_cells", "Cell Area"),
     "perimeter": ("perimeter_length", "Cell Perimeter"),
     "orientation": ("orientation_cells", "Orientation (degrees)"),
@@ -121,12 +148,13 @@ hist_info = {
 }
 
 def make_hist_table(values, bins, xlabel):
+    """Generate histogram table with percentages."""
     counts, edges = np.histogram(values, bins=bins)
     percents = 100 * counts / counts.sum()
 
     labels = [
         f"{round(edges[i],2)}–{round(edges[i+1],2)}"
-        for i in range(len(edges)-1)
+        for i in range(len(edges) - 1)
     ]
 
     return pd.DataFrame({
@@ -135,102 +163,110 @@ def make_hist_table(values, bins, xlabel):
         "Percentage (%)": np.round(percents, 2)
     })
 
-for name, (col, xlabel) in hist_info.items():
+def analyze_metric(df, name, col, xlabel):
+    # Convert to numeric
+    df[col] = pd.to_numeric(df[col], errors="coerce")
+    subset = df.dropna(subset=[col])
 
-    # =========================
-    # CLEANING
-    # =========================
-    cells_clean[col] = pd.to_numeric(cells_clean[col], errors='coerce')
-    subset = cells_clean.dropna(subset=[col])
     values = subset[col]
 
-    # =========================
-    # HISTOGRAM
-    # =========================
-    plt.figure(figsize=(6,4))
+    # -------------------------
+    # Histogram
+    # -------------------------
+    plt.figure(figsize=(6, 4))
 
-    color = (
-        'lightgreen' if name == 'area' else
-        'lightcoral' if name == 'perimeter' else
-        'lightblue' if name == 'orientation' else
-        'orange'
-    )
+    color_map = {
+        "area": "lightgreen",
+        "perimeter": "lightcoral",
+        "orientation": "lightblue",
+        "elongation": "orange"
+    }
 
     if name == "area":
         values = values[values > 0]
-        values_log = np.log10(values)
-        plt.hist(values_log, bins=30, color=color)
-        plt.xlabel(f"log10({xlabel})")
+        values = np.log10(values)
+        xlabel_plot = f"log10({xlabel})"
     else:
-        plt.hist(values, bins=30, color=color)
-        plt.xlabel(xlabel)
+        xlabel_plot = xlabel
 
+    plt.hist(values, bins=30, color=color_map[name])
+
+    plt.xlabel(xlabel_plot)
     plt.ylabel("Frequency")
     plt.title(f"{xlabel} Distribution")
 
-    plt.savefig(os.path.join(output_dir, f"{name}_histogram.png"), dpi=600)
-    plt.show()
+    plt.savefig(os.path.join(OUTPUT_DIR, f"{name}_histogram.png"), dpi=600)
+    plt.close()
 
-    # =========================
-    # TABLE
-    # =========================
-    if name == "area":
-        bins = np.linspace(values_log.min(), values_log.max(), 30)
-        table = make_hist_table(values_log, bins, f"log10({xlabel})")
-    else:
-        bins = np.linspace(values.min(), values.max(), 30)
-        table = make_hist_table(values, bins, xlabel)
+    # -------------------------
+    # Table
+    # -------------------------
+    bins = np.linspace(values.min(), values.max(), 30)
+    table = make_hist_table(values, bins, xlabel_plot)
 
-    table.to_csv(os.path.join(output_dir, f"{name}_table.csv"), index=False)
+    table.to_csv(os.path.join(OUTPUT_DIR, f"{name}_table.csv"), index=False)
 
     print(f"\n{name.upper()} TABLE")
     print(table.head())
 
-    # =========================
-    # SPATIAL SCATTER
-    # =========================
-    plt.figure(figsize=(6,6))
+    # -------------------------
+    # Spatial plot
+    # -------------------------
+    plt.figure(figsize=(6, 6))
 
     values_clipped = values.clip(
         lower=values.quantile(0.01),
         upper=values.quantile(0.99)
     )
 
-    plt.scatter(
+    sc = plt.scatter(
         subset["center_x_cells"],
         subset["center_y_cells"],
         c=values_clipped,
-        cmap='viridis',
+        cmap="viridis",
         s=20
     )
 
     plt.gca().invert_yaxis()
-    plt.colorbar(label=xlabel)
-    plt.axis('equal')
+    plt.axis("equal")
+
+    plt.colorbar(sc, label=xlabel)
     plt.title(f"Cells Colored by {xlabel}")
 
-    plt.savefig(os.path.join(output_dir, f"{name}_spatial.png"), dpi=600)
-    plt.show()
+    plt.savefig(os.path.join(OUTPUT_DIR, f"{name}_spatial.png"), dpi=600)
+    plt.close()
 
-# =========================
-# 🌡️ CELL DENSITY
-# =========================
-plt.figure(figsize=(6,6))
+# Run all metrics
+for name, (col, xlabel) in METRICS.items():
+    analyze_metric(cells_clean, name, col, xlabel)
 
-plt.hexbin(
-    cells_clean["center_x_cells"],
-    cells_clean["center_y_cells"],
-    gridsize=50,
-    cmap='magma'
-)
+# =========================================================
+# 7. CELL DENSITY MAP
+# =========================================================
 
-plt.colorbar(label='Cell Density')
-plt.gca().invert_yaxis()
-plt.axis('equal')
-plt.title("Wing Disc Pouch: Cell Density Heatmap")
+def plot_density(df):
+    plt.figure(figsize=(6, 6))
 
-plt.savefig(os.path.join(output_dir, "cell_density.png"), dpi=600)
-plt.show()
+    plt.hexbin(
+        df["center_x_cells"],
+        df["center_y_cells"],
+        gridsize=50,
+        cmap="magma"
+    )
 
-print("DONE!!!!!")
-print("DRINK MORE WATER!!!!!")
+    plt.colorbar(label="Cell Density")
+
+    plt.gca().invert_yaxis()
+    plt.axis("equal")
+
+    plt.title("Cell Density Heatmap")
+
+    plt.savefig(os.path.join(OUTPUT_DIR, "cell_density.png"), dpi=600)
+    plt.close()
+
+plot_density(cells_clean)
+
+# =========================================================
+# ✅ DONE
+# =========================================================
+print("DONE → outputs saved to:", OUTPUT_DIR)
