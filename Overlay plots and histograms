@@ -23,7 +23,7 @@ base_dir = r"D:\Wing_disc_data\Wing_disc_pouch\raw data"
 
 
 # CHANGE FILE DIRECTORY AS NEEDED -> r"  "  
-genotypes = {
+genotypes = {                             # EXTEND ARRAY AS NEEDED
     "WT": [
         r"WT1Proj-1\TA.db",
         r"WT2Proj-1\TA.db",
@@ -123,7 +123,7 @@ all_vals = data["area_um2"].values
 all_vals = all_vals[all_vals > 0]
 log_all = np.log10(all_vals)
 
-low, high = np.percentile(log_all, [0.25, 99.75])
+low, high = np.percentile(log_all, [0.25, 99.75])         # TRIMMING ONLY FOR EASIER VISUALISATION OF DATA
 
 for g in genotypes.keys():
     subset = data[data["genotype"] == g]
