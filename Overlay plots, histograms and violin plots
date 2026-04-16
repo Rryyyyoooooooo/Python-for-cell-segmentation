@@ -7,23 +7,24 @@ import seaborn as sns
 import matplotlib as mpl
 
 # =========================================================
-# FONT SETTINGS (Times New Roman)
+# 🎨 GLOBAL STYLE SETTINGS
 # =========================================================
-
 mpl.rcParams.update({
     "font.family": "Times New Roman",
     "axes.unicode_minus": False
 })
 
+np.random.seed(42)  # reproducibility
+
 # =========================================================
-# 1. USER SETTINGS
+# 1. USER CONFIGURATION
 # =========================================================
 
-base_dir = r"D:\Wing_disc_data\Wing_disc_pouch\raw data"
+# Base directory containing all experiment folders
+BASE_DIR = r"D:\Wing_disc_data\Wing_disc_pouch\raw data"
 
-
-# CHANGE FILE DIRECTORY AS NEEDED -> r"  "  
-genotypes = {                             # EXTEND ARRAY AS NEEDED
+# Genotype → list of database paths (relative to BASE_DIR)
+GENOTYPES = {
     "WT": [
         r"WT1Proj-1\TA.db",
         r"WT2Proj-1\TA.db",
@@ -47,24 +48,28 @@ genotypes = {                             # EXTEND ARRAY AS NEEDED
     ],
 }
 
-PIXELS_PER_MICRON = 5.4555   # SET TO SAME SCALE AS IMAGEJ
+# Pixel → µm² conversion (must match ImageJ scaling)
+PIXELS_PER_MICRON = 5.4555
 PX2_TO_UM2 = (1 / PIXELS_PER_MICRON) ** 2
 
-desktop = os.path.join(os.path.expanduser("~"), "Desktop")
-out_dir = os.path.join(desktop, "wing_disc_outputs")
-os.makedirs(out_dir, exist_ok=True)
+# Output directory
+DESKTOP = os.path.join(os.path.expanduser("~"), "Desktop")
+OUT_DIR = os.path.join(DESKTOP, "wing_disc_outputs")
+os.makedirs(OUT_DIR, exist_ok=True)
 
-colors = {
+# Consistent color palette
+COLORS = {
     "WT": "#1f77b4",
     "Rok RNAi": "#d62728",
     "Rho1GAP19D RNAi": "#2ca02c"
 }
 
 # =========================================================
-# 2. LOAD DATA
+# 2. DATA LOADING
 # =========================================================
 
 def load_db(path, genotype, disc_id):
+    """Load a single SQLite database and annotate metadata."""
     conn = sqlite3.connect(path)
     df = pd.read_sql_query("SELECT * FROM Cells", conn)
     conn.close()
@@ -76,37 +81,42 @@ def load_db(path, genotype, disc_id):
 
 all_data = []
 
-for g, paths in genotypes.items():
-    for i, p in enumerate(paths):
-        full_path = os.path.join(base_dir, p)
-        df = load_db(full_path, g, f"{g}_{i+1}")
+for genotype, paths in GENOTYPES.items():
+    for i, rel_path in enumerate(paths):
+        full_path = os.path.join(BASE_DIR, rel_path)
+        df = load_db(full_path, genotype, f"{genotype}_{i+1}")
         all_data.append(df)
 
 data = pd.concat(all_data, ignore_index=True)
-print("Total cells:", len(data))
+print("Total cells loaded:", len(data))
 
 # =========================================================
-# 3. CLEAN + CONVERT
+# 3. CLEANING + UNIT CONVERSION
 # =========================================================
 
+# Convert columns to numeric and compute derived variables
 data["area_um2"] = pd.to_numeric(data["area_cells"], errors="coerce") * PX2_TO_UM2
 data["S1"] = pd.to_numeric(data["S1_stretch_cells"], errors="coerce")
 data["neighbour"] = pd.to_numeric(data["nb_of_vertices_cut_off"], errors="coerce")
 
-data = data.dropna(subset=["area_um2", "S1", "neighbour", "center_x_cells", "center_y_cells"])
+# Drop invalid/missing entries
+data = data.dropna(subset=[
+    "area_um2", "S1", "neighbour",
+    "center_x_cells", "center_y_cells"
+])
 
 # =========================================================
-# 4. EXPORT RAW DATA
+# 4. EXPORT CLEANED DATA
 # =========================================================
 
-for g in genotypes:
+for g in GENOTYPES:
     data[data["genotype"] == g].to_csv(
-        os.path.join(out_dir, f"{g}_cells.csv"),
+        os.path.join(OUT_DIR, f"{g}_cells.csv"),
         index=False
     )
 
 # =========================================================
-# 5. BINNING
+# 5. BIN DEFINITIONS
 # =========================================================
 
 area_bins = np.linspace(0, data["area_um2"].max(), 50)
@@ -114,7 +124,7 @@ elong_bins = np.linspace(data["S1"].min(), data["S1"].max(), 50)
 neigh_bins = np.arange(3, 11, 1)
 
 # =========================================================
-# 6. AREA HISTOGRAM (LOG10 + 0.25–99.75%)
+# 6. AREA HISTOGRAM (LOG10, TRIMMED)
 # =========================================================
 
 plt.figure(figsize=(6, 4))
@@ -123,12 +133,11 @@ all_vals = data["area_um2"].values
 all_vals = all_vals[all_vals > 0]
 log_all = np.log10(all_vals)
 
-low, high = np.percentile(log_all, [0.25, 99.75])         # TRIMMING ONLY FOR EASIER VISUALISATION OF DATA
+# Trim extreme outliers for visual clarity
+low, high = np.percentile(log_all, [0.25, 99.75])
 
-for g in genotypes.keys():
-    subset = data[data["genotype"] == g]
-
-    vals = subset["area_um2"].values
+for g in GENOTYPES:
+    vals = data[data["genotype"] == g]["area_um2"].values
     vals = vals[vals > 0]
 
     log_vals = np.log10(vals)
@@ -138,22 +147,19 @@ for g in genotypes.keys():
         log_vals,
         bins=45,
         density=True,
-        histtype='step',
+        histtype="step",
         linewidth=2,
-        color=colors[g],
+        color=COLORS[g],
         label=g
     )
 
 plt.xlabel("Log10 Cell area (µm²)")
 plt.ylabel("Density")
-plt.title(
-    "Cell Area Distribution (log10)\n"
-    f"Range: {low:.2f} – {high:.2f} (0.25–99.75 percentile)"
-)
+plt.title(f"Cell Area Distribution (log10)\nRange: {low:.2f} – {high:.2f}")
 plt.legend()
 
 plt.tight_layout()
-plt.savefig(os.path.join(out_dir, "area_hist_log.png"), dpi=300)
+plt.savefig(os.path.join(OUT_DIR, "area_hist_log.png"), dpi=300)
 plt.close()
 
 # =========================================================
@@ -161,9 +167,10 @@ plt.close()
 # =========================================================
 
 def export_hist_table(col, bins, name):
+    """Export histogram density values for downstream analysis."""
     rows = []
 
-    for g in genotypes:
+    for g in GENOTYPES:
         vals = data[data["genotype"] == g][col].values
         vals = vals[np.isfinite(vals)]
 
@@ -173,9 +180,10 @@ def export_hist_table(col, bins, name):
             rows.append([g, edges[i], edges[i+1], counts[i]])
 
     df_out = pd.DataFrame(rows,
-                          columns=["genotype", "bin_start", "bin_end", "density"])
+        columns=["genotype", "bin_start", "bin_end", "density"]
+    )
 
-    df_out.to_csv(os.path.join(out_dir, f"{name}_hist_table.csv"), index=False)
+    df_out.to_csv(os.path.join(OUT_DIR, f"{name}_hist_table.csv"), index=False)
 
 
 export_hist_table("area_um2", area_bins, "area")
@@ -183,13 +191,13 @@ export_hist_table("S1", elong_bins, "elongation")
 export_hist_table("neighbour", neigh_bins, "neighbour")
 
 # =========================================================
-# 8. HISTOGRAM PLOTS
+# 8. GENERIC HISTOGRAM PLOT FUNCTION
 # =========================================================
 
 def plot_hist(col, bins, xlabel, fname):
     plt.figure(figsize=(6, 4))
 
-    for g in genotypes:
+    for g in GENOTYPES:
         vals = data[data["genotype"] == g][col].values
         vals = vals[np.isfinite(vals)]
 
@@ -197,9 +205,9 @@ def plot_hist(col, bins, xlabel, fname):
             vals,
             bins=bins,
             density=True,
-            histtype='step',
+            histtype="step",
             linewidth=2,
-            color=colors[g],
+            color=COLORS[g],
             label=g
         )
 
@@ -208,7 +216,7 @@ def plot_hist(col, bins, xlabel, fname):
     plt.legend()
 
     plt.tight_layout()
-    plt.savefig(os.path.join(out_dir, fname), dpi=300)
+    plt.savefig(os.path.join(OUT_DIR, fname), dpi=300)
     plt.close()
 
 
@@ -217,10 +225,11 @@ plot_hist("S1", elong_bins, "Cell elongation (S1)", "elongation_hist.png")
 plot_hist("neighbour", neigh_bins, "Neighbour", "neighbour_hist.png")
 
 # =========================================================
-# 9. AREA VIOLIN (LOG10 + TRIMMED)
+# 9. VIOLIN PLOTS
 # =========================================================
 
-def violin_plot_area(data, out_dir):
+def violin_area():
+    """Log-transformed, trimmed violin plot for area."""
     plt.figure(figsize=(6, 4))
 
     all_vals = data["area_um2"].values
@@ -231,7 +240,7 @@ def violin_plot_area(data, out_dir):
 
     plot_df = []
 
-    for g in genotypes.keys():
+    for g in GENOTYPES:
         vals = data[data["genotype"] == g]["area_um2"].values
         vals = vals[vals > 0]
 
@@ -257,65 +266,53 @@ def violin_plot_area(data, out_dir):
     plt.ylabel("Log10 Cell area (µm²)")
     plt.xlabel("")
     plt.title("Cell Area Distribution")
-    plt.xticks(rotation=20)
 
     plt.tight_layout()
-    plt.savefig(os.path.join(out_dir, "area_violin.png"), dpi=300)
+    plt.savefig(os.path.join(OUT_DIR, "area_violin.png"), dpi=300)
     plt.close()
 
-# =========================================================
-# 10. VIOLIN PLOTS (OTHER VARIABLES)
-# =========================================================
 
-plt.figure(figsize=(7, 5))
-sns.violinplot(data=data, x="genotype", y="S1",
-               inner="box", cut=0, scale="width")
-sns.stripplot(data=data, x="genotype", y="S1",
-              color="black", size=1, alpha=0.15)
+def violin_generic(col, title, fname):
+    plt.figure(figsize=(7, 5))
 
-plt.xlabel("")
-plt.title("Cell Elongation Distribution")
-plt.tight_layout()
-plt.savefig(os.path.join(out_dir, "violin_elongation.png"), dpi=300)
-plt.close()
+    sns.violinplot(data=data, x="genotype", y=col,
+                   inner="box", cut=0, scale="width")
 
-plt.figure(figsize=(7, 5))
-sns.violinplot(data=data, x="genotype", y="neighbour",
-               inner="box", cut=0, scale="width")
-sns.stripplot(data=data, x="genotype", y="neighbour",
-              color="black", size=1, alpha=0.15)
+    sns.stripplot(data=data, x="genotype", y=col,
+                  color="black", size=1, alpha=0.15)
 
-plt.ylabel("Neighbour")
-plt.xlabel("")
-plt.title("Cell Neighbour Distribution")
-plt.tight_layout()
-plt.savefig(os.path.join(out_dir, "violin_neighbour.png"), dpi=300)
-plt.close()
+    plt.xlabel("")
+    plt.title(title)
 
-violin_plot_area(data, out_dir)
+    plt.tight_layout()
+    plt.savefig(os.path.join(OUT_DIR, fname), dpi=300)
+    plt.close()
+
+
+violin_area()
+violin_generic("S1", "Cell Elongation Distribution", "violin_elongation.png")
+violin_generic("neighbour", "Cell Neighbour Distribution", "violin_neighbour.png")
 
 # =========================================================
-# 11. SPATIAL PLOTS
+# 10. SPATIAL PLOTS
 # =========================================================
 
 def spatial_plot(col, title, fname):
-    fig, axes = plt.subplots(1, len(genotypes), figsize=(15, 4))
+    fig, axes = plt.subplots(1, len(GENOTYPES), figsize=(15, 4))
 
-    for ax, g in zip(axes, genotypes):
-
+    for ax, g in zip(axes, GENOTYPES):
         sub = data[data["genotype"] == g].copy()
 
+        # Center + normalize coordinates
         x = sub["center_x_cells"].values
         y = sub["center_y_cells"].values
 
-        x = x - np.mean(x)
-        y = y - np.mean(y)
+        x -= np.mean(x)
+        y -= np.mean(y)
 
-        coords = np.vstack((x, y)).T
-        scale = np.sqrt((coords**2).sum(axis=1)).mean()
-
-        x = x / scale
-        y = y / scale
+        scale = np.sqrt((x**2 + y**2)).mean()
+        x /= scale
+        y /= scale
 
         v = sub[col].values
         v = v[np.isfinite(v)]
@@ -334,15 +331,17 @@ def spatial_plot(col, title, fname):
         ax.set_title(g)
         ax.set_aspect("equal")
         ax.axis("off")
+
         plt.colorbar(sc, ax=ax, fraction=0.046, pad=0.04)
 
     fig.suptitle(title)
     plt.tight_layout()
-    plt.savefig(os.path.join(out_dir, fname), dpi=300)
+    plt.savefig(os.path.join(OUT_DIR, fname), dpi=300)
     plt.close()
+
 
 spatial_plot("area_um2", "Cell area spatial map", "spatial_area.png")
 spatial_plot("S1", "Cell elongation spatial map", "spatial_elongation.png")
 spatial_plot("neighbour", "Cell neighbour spatial map", "spatial_neighbour.png")
 
-print("DONE → saved to Desktop:", out_dir)
+print("DONE → saved to:", OUT_DIR)
