@@ -16,7 +16,7 @@ mpl.rcParams.update({
 # =========================
 # 🔧 SET PATH
 # =========================
-db_path = r"C:\Users\Ryo\Desktop\raw data\dataset\file.db"  # CHANGE FILE DIRECTORY HERE (FILE FORMAT MUST BE IN .pd!!!!!)
+db_path = r"C:\Users\daryl\Desktop\raw data\RhoGAP7Proj-1\TA.db"  # CHANGE FILE DIRECTORY HERE (FILE FORMAT MUST BE IN .pd!!!!!)
 
 output_dir = os.path.join(os.path.dirname(db_path), "analysis_output")
 os.makedirs(output_dir, exist_ok=True)
